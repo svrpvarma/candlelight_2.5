@@ -5,9 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-# Qt 5.15 (SavvyCAN V213/V220) or Qt 6 (SavvyCAN Qt6 builds) - whichever is found first
-find_package(QT NAMES Qt5 Qt6 REQUIRED COMPONENTS Core SerialBus)
+# Qt 5.15 (SavvyCAN V213/V220) or Qt 6 (SavvyCAN Qt6 builds).
+# Pass -DCANDLE_QT_MAJOR=5 or 6 to pick one explicitly; otherwise whichever is found.
+if(CANDLE_QT_MAJOR)
+    set(QT_VERSION_MAJOR ${CANDLE_QT_MAJOR})
+else()
+    find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core SerialBus)
+endif()
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core SerialBus)
+set(QT_VERSION ${Qt${QT_VERSION_MAJOR}_VERSION})
 message(STATUS "Building candleLightFD plugin for Qt ${QT_VERSION}")
 
 add_library(qtcandlelightfdcanbus MODULE

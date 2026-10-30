@@ -17,11 +17,13 @@ jobs:
         include:
           - name: qt5.15.2-msvc2019-x64
             qt: '5.15.2'
+            major: 5
             arch: win64_msvc2019_64
             modules: ''
             toolset: v142
           - name: qt6.10-msvc2022-x64
             qt: '6.10'
+            major: 6
             arch: win64_msvc2022_64
             modules: 'qtserialbus'
             toolset: ''
@@ -46,13 +48,15 @@ jobs:
               ForEach-Object { Write-Output ("::error::" + $_.Line.Trim()) }
             exit 1
           }
+          $common = @("-G", "Visual Studio 17 2022", "-A", "x64",
+                      "-DCANDLE_QT_MAJOR=${{ matrix.major }}", "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR")
           $ts = @()
           if ("${{ matrix.toolset }}") { $ts = @("-T", "${{ matrix.toolset }}") }
-          cmake -B build -S . -G "Visual Studio 17 2022" -A x64 @ts 2>&1 | Tee-Object configure.log
+          cmake -B build -S . @common @ts 2>&1 | Tee-Object configure.log
           if ($LASTEXITCODE -ne 0 -and $ts.Count -gt 0) {
             Write-Output "::warning::Toolset ${{ matrix.toolset }} not available, using the default MSVC toolset"
             Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
-            cmake -B build -S . -G "Visual Studio 17 2022" -A x64 2>&1 | Tee-Object configure.log
+            cmake -B build -S . @common 2>&1 | Tee-Object configure.log
           }
           if ($LASTEXITCODE -ne 0) { Fail configure.log }
           cmake --build build --config Release -j 2 2>&1 | Tee-Object build.log
@@ -65,7 +69,7 @@ jobs:
           Get-ChildItem build -Recurse -Filter qtcandlelightfdcanbus.dll | Copy-Item -Destination package/
           Copy-Item qtcandlelightfd.ini, README.md package/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: qtcandlelightfdcanbus-${{ matrix.name }}
           path: package/
