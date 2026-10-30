@@ -25,7 +25,7 @@ jobs:
             qt: '6.10'
             major: 6
             arch: win64_msvc2022_64
-            modules: 'qtserialbus'
+            modules: 'qtserialbus qtserialport'
             toolset: ''
     name: ${{ matrix.name }}
     steps:
@@ -44,8 +44,11 @@ jobs:
         shell: pwsh
         run: |
           function Fail($log) {
-            Get-Content $log | Select-String -Pattern '(error|Error)[ :]' | Select-Object -First 15 |
-              ForEach-Object { Write-Output ("::error::" + $_.Line.Trim()) }
+            Get-Content $log | Select-String -Pattern '(error|Error)[ :]' -Context 0,4 | Select-Object -First 10 |
+              ForEach-Object {
+                $msg = (@($_.Line) + $_.Context.PostContext | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join ' | '
+                Write-Output ("::error::" + $msg)
+              }
             exit 1
           }
           $common = @("-G", "Visual Studio 17 2022", "-A", "x64",
