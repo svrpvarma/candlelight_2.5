@@ -13,8 +13,10 @@
 #include <windows.h>
 #endif
 
-/* SavvyCAN passes listen-only mode in QCanBusDevice::UserKey (EN_SILENT_MODE) */
-static const quint32 USERKEY_SILENT_MODE = 0x00000001;
+/* SavvyCAN passes these bits in QCanBusDevice::UserKey (serialbusconnection.h) */
+static const quint32 USERKEY_SILENT_MODE        = 0x00000001;
+static const quint32 USERKEY_LOOPBACK_MODE      = 0x00000002;
+static const quint32 USERKEY_NO_AUTO_RETRANSMIT = 0x00000004;
 
 CandleApiDevice::CandleApiDevice(QString name) :
     _name(name)
@@ -37,6 +39,10 @@ CandleApiDevice::~CandleApiDevice()
  *   [timing]
  *   NominalSamplePoint=87.5
  *   DataSamplePoint=75.0
+ *   [bus]
+ *   DataBitrate=2000000     ; used when SavvyCAN does not pass a data rate (Qt5 builds)
+ *   BitrateSwitch=true      ; BRS for >8 byte frames that SavvyCAN sends without FD flag
+ *   ForceFD=false           ; open in CAN FD mode even if the CAN FD box is not ticked
  *
  * Sample points must match the other nodes on a CAN FD bus. */
 void CandleApiDevice::loadSettings()
@@ -67,6 +73,10 @@ void CandleApiDevice::loadSettings()
     double dsp = s.value("timing/DataSamplePoint", _dataSamplePoint * 100.0).toDouble();
     if (nsp >= 50.0 && nsp < 100.0) _nomSamplePoint = nsp / 100.0;
     if (dsp >= 50.0 && dsp < 100.0) _dataSamplePoint = dsp / 100.0;
+    const uint dbr = s.value("bus/DataBitrate", _iniDataBitrate).toUInt();
+    if (dbr) _iniDataBitrate = dbr;
+    _iniBitrateSwitch = s.value("bus/BitrateSwitch", _iniBitrateSwitch).toBool();
+    _iniForceFd = s.value("bus/ForceFD", _iniForceFd).toBool();
     qDebug() << "candleLightFD settings:" << iniPath << "nominal SP" << nsp << "data SP" << dsp;
 }
 
@@ -96,7 +106,7 @@ bool CandleApiDevice::configureTiming(candle_handle handle, bool fd, uint32_t bi
         candle_bittiming_t td = d.toCandle();
         if (!candle_channel_set_timing(handle, 0, &tn) || !candle_channel_set_data_timing(handle, 0, &td))
         {
-            setError(tr("Adapter rejected the bit timing (error %1)").arg(candle_dev_last_error(handle)),
+            setError(tr("Adapter rejected the bit timing (error %1)").arg(int(candle_dev_last_error(handle))),
                      ConfigurationError);
             return false;
         }
@@ -115,7 +125,7 @@ bool CandleApiDevice::configureTiming(candle_handle handle, bool fd, uint32_t bi
     candle_bittiming_t tn = n.toCandle();
     if (!candle_channel_set_timing(handle, 0, &tn))
     {
-        setError(tr("Adapter rejected the bit timing (error %1)").arg(candle_dev_last_error(handle)),
+        setError(tr("Adapter rejected the bit timing (error %1)").arg(int(candle_dev_last_error(handle))),
                  ConfigurationError);
         return false;
     }
@@ -141,16 +151,16 @@ bool CandleApiDevice::open()
     if (!candle_dev_open(handle))
     {
         setError(tr("Cannot open %1 - is another program using it? (error %2)")
-                     .arg(_name).arg(candle_dev_last_error(handle)), ConnectionError);
+                     .arg(_name).arg(int(candle_dev_last_error(handle))), ConnectionError);
         setState(UnconnectedState);
         return false;
     }
 
     QVariant v = configurationParameter(BitRateKey);
     uint32_t bitrate = v.isValid() && v.toUInt() ? v.toUInt() : 500000;
-    _fdMode = configurationParameter(CanFdKey).toBool();
+    _fdMode = configurationParameter(CanFdKey).toBool() || _iniForceFd;
     v = configurationParameter(DataBitRateKey);
-    uint32_t dataBitrate = v.isValid() && v.toUInt() ? v.toUInt() : 2000000;
+    uint32_t dataBitrate = v.isValid() && v.toUInt() ? v.toUInt() : _iniDataBitrate;
     _receiveOwn = configurationParameter(ReceiveOwnKey).toBool();
     const quint32 user = configurationParameter(UserKey).toUInt();
 
@@ -168,13 +178,17 @@ bool CandleApiDevice::open()
     {
         flags |= CANDLE_MODE_FD;
     }
-    if ((user & USERKEY_SILENT_MODE) || configurationParameter(UserKey).toString() == "listen")
+    if (user & USERKEY_SILENT_MODE)
     {
         flags |= CANDLE_MODE_LISTEN_ONLY;
     }
-    if (configurationParameter(LoopbackKey).toBool())
+    if ((user & USERKEY_LOOPBACK_MODE) || configurationParameter(LoopbackKey).toBool())
     {
         flags |= CANDLE_MODE_LOOP_BACK;
+    }
+    if (user & USERKEY_NO_AUTO_RETRANSMIT)
+    {
+        flags |= CANDLE_MODE_ONE_SHOT;
     }
 
     _deviceTicksStart = 0;
@@ -187,7 +201,7 @@ bool CandleApiDevice::open()
     if (!candle_channel_start(handle, 0, flags))
     {
         setError(tr("Adapter refused to start the CAN channel (error %1)")
-                     .arg(candle_dev_last_error(handle)), ConnectionError);
+                     .arg(int(candle_dev_last_error(handle))), ConnectionError);
         candle_dev_close(handle);
         setState(UnconnectedState);
         return false;
@@ -253,7 +267,9 @@ bool CandleApiDevice::writeFrame(const QCanBusFrame &msg)
 
     const QByteArray payload = msg.payload();
     const int len = payload.size();
-    if (msg.hasFlexibleDataRateFormat())
+    // Qt5 SavvyCAN may send >8 byte frames without setting the FD flag
+    const bool sendAsFd = msg.hasFlexibleDataRateFormat() || (_fdMode && len > 8);
+    if (sendAsFd)
     {
         if (!_fdMode)
         {
@@ -265,7 +281,8 @@ bool CandleApiDevice::writeFrame(const QCanBusFrame &msg)
             setError(tr("CAN FD payload is limited to 64 bytes"), WriteError);
             return false;
         }
-        frame.flags = CANDLE_FLAG_FD | (msg.hasBitrateSwitch() ? CANDLE_FLAG_BRS : 0);
+        const bool brs = msg.hasFlexibleDataRateFormat() ? msg.hasBitrateSwitch() : _iniBitrateSwitch;
+        frame.flags = CANDLE_FLAG_FD | (brs ? CANDLE_FLAG_BRS : 0);
         frame.can_dlc = candle_len_to_dlc(uint8_t(len));
     }
     else
@@ -281,7 +298,7 @@ bool CandleApiDevice::writeFrame(const QCanBusFrame &msg)
 
     if (!candle_frame_send(_iface->getHandle(), 0, &frame))
     {
-        setError(tr("USB write failed (error %1)").arg(candle_dev_last_error(_iface->getHandle())),
+        setError(tr("USB write failed (error %1)").arg(int(candle_dev_last_error(_iface->getHandle()))),
                  WriteError);
         return false;
     }
@@ -318,7 +335,7 @@ QString CandleApiDevice::interpretErrorFrame(const QCanBusFrame &errorFrame)
     }
     if (d.size() >= 8)
     {
-        parts << QString("TEC=%1 REC=%2").arg(quint8(d.at(6))).arg(quint8(d.at(7)));
+        parts << QString("TEC=%1 REC=%2").arg(int(quint8(d.at(6)))).arg(int(quint8(d.at(7))));
     }
     return parts.join(", ");
 }

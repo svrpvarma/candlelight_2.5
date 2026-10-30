@@ -39,11 +39,11 @@ QList<QCanBusDeviceInfo> CandleApiDevices::interfaces()
 
                 const wchar_t *ws = candle_dev_get_serial(dev);
                 QString serial = ws ? QString::fromWCharArray(ws) : QString();
-                QString dev_name = serial.isEmpty() ? QString("gs_usb%1").arg(cnt)
+                QString dev_name = serial.isEmpty() ? QString("gs_usb%1").arg(int(cnt))
                                                     : QString("gs_usb_%1").arg(serial);
                 if (usedNames.contains(dev_name))
                 {
-                    dev_name += QString("_%1").arg(cnt);
+                    dev_name += QString("_%1").arg(int(cnt));
                 }
                 usedNames.insert(dev_name);
 
@@ -51,8 +51,8 @@ QList<QCanBusDeviceInfo> CandleApiDevices::interfaces()
                 candle_capability_t caps;
                 candle_channel_get_capabilities(dev, 0, &caps);
                 QString description = QString("candleLight %1 (%2 MHz CAN clock)")
-                                          .arg(fd ? "CAN FD" : "CAN")
-                                          .arg(caps.fclk_can / 1e6);
+                                          .arg(fd ? QStringLiteral("CAN FD") : QStringLiteral("CAN"))
+                                          .arg(double(caps.fclk_can) / 1e6);
                 qDebug() << "Found candleLight device:" << dev_name << description;
 
                 CandleApiInterface *iface = findInterface(dev);

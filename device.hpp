@@ -37,6 +37,9 @@ private:
     bool _receiveOwn = false;
     double _nomSamplePoint = 0.875;
     double _dataSamplePoint = 0.75;
+    uint32_t _iniDataBitrate = 2000000;   // used when SavvyCAN does not pass DataBitRateKey (Qt5 builds)
+    bool _iniBitrateSwitch = true;        // BRS for >8 byte frames sent without FD flag
+    bool _iniForceFd = false;
 
     uint32_t _deviceTicksStart = 0;
     uint32_t _lastDevTs = 0;

@@ -18,7 +18,7 @@ QString CandleBitTiming::toString() const
     return QString("%1 kbit/s @ %2% (BRP=%3 TSEG1=%4 TSEG2=%5 SJW=%6)")
         .arg(bitrate / 1000.0, 0, 'g', 6)
         .arg(samplePoint * 100.0, 0, 'f', 1)
-        .arg(brp).arg(tseg1).arg(tseg2).arg(sjw);
+        .arg(uint(brp)).arg(uint(tseg1)).arg(uint(tseg2)).arg(uint(sjw));
 }
 
 namespace CandleTiming
@@ -92,7 +92,7 @@ bool calc(uint32_t fclk, const CandleTimingLimits &lim, uint32_t bitrate, double
     }
     if (!found && error) {
         *error = QString("Bitrate %1 bit/s is not reachable with a %2 MHz CAN clock")
-                     .arg(bitrate).arg(fclk / 1e6);
+                     .arg(uint(bitrate)).arg(double(fclk) / 1e6);
     }
     return found;
 }

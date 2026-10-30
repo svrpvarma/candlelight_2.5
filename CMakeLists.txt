@@ -5,7 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core SerialBus)
+# Qt 5.15 (SavvyCAN V213/V220) or Qt 6 (SavvyCAN Qt6 builds) - whichever is found first
+find_package(QT NAMES Qt5 Qt6 REQUIRED COMPONENTS Core SerialBus)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core SerialBus)
+message(STATUS "Building candleLightFD plugin for Qt ${QT_VERSION}")
 
 add_library(qtcandlelightfdcanbus MODULE
     plugin.cpp plugin.hpp
@@ -21,7 +24,10 @@ add_library(qtcandlelightfdcanbus MODULE
 )
 
 target_compile_definitions(qtcandlelightfdcanbus PRIVATE UNICODE _UNICODE QT_PLUGIN)
-target_link_libraries(qtcandlelightfdcanbus PRIVATE Qt6::Core Qt6::SerialBus)
+if(QT_VERSION_MAJOR EQUAL 5)
+    target_compile_definitions(qtcandlelightfdcanbus PRIVATE CANDLE_QT5)
+endif()
+target_link_libraries(qtcandlelightfdcanbus PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::SerialBus)
 if(WIN32)
     target_link_libraries(qtcandlelightfdcanbus PRIVATE setupapi ole32 winusb)
 endif()

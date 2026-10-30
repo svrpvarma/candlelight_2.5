@@ -4,12 +4,21 @@
 #include <QtSerialBus/QCanBusFactory>
 #include <QtSerialBus/QCanBusDevice>
 
-/* Qt 6 plugin (SavvyCAN V220+ Windows builds use Qt 6.10 / MSVC 2022 x64). */
+/* Builds for Qt 5.15 (SavvyCAN V213/V220: Qt 5.15.2 MSVC 2019 x64) and Qt 6.
+   CANDLE_QT5 is set by CMakeLists.txt (moc needs a plain define, not QT_VERSION). */
+#ifdef CANDLE_QT5
+class CandleLightFdCanBusPlugin : public QObject, public QCanBusFactoryV2
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QCanBusFactory" FILE "plugin.json")
+    Q_INTERFACES(QCanBusFactoryV2)
+#else
 class CandleLightFdCanBusPlugin : public QObject, public QCanBusFactory
 {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QCanBusFactory" FILE "plugin.json")
     Q_INTERFACES(QCanBusFactory)
+#endif
 
 public:
     QList<QCanBusDeviceInfo> availableDevices(QString *errorMessage) const override;
